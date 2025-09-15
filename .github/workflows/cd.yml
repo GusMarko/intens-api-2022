@@ -1,0 +1,62 @@
+name: Merge CD Pipeline
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  AWS_ECS_CLUSTER: "intens-praksa-main-cluster"
+  AWS_ECS_SERVICE: "intens-praksa-main-service"
+  AWS_ECR_REPO_NAME: "intens-praksa-main"
+  IMAGE_NAME: "intens-praksa"
+  PORT: 8080
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Connect AWS Account
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          ws-access-key-id: ${{env.AWS_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{env.AWS_SECRET_ACCESS_KEY}}
+          aws-region: ${{env.AWS_REGION}}
+
+      - name: Login to ECR
+        id: ecr_login
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build Docker Image
+        run: |
+          docker build --build-arg PORT=${{ env.PORT }} -t ${{ env.IMAGE_NAME }}:$GITHUB_RUN_ID ./
+          docker tag ${{ env.IMAGE_NAME }}:$GITHUB_RUN_ID ${{ steps.ecr_login.outputs.registry }}/${{ env.AWS_ECR_REPO_NAME }}:$GITHUB_RUN_ID
+
+      - name: Push Docker Image to ECR
+        run: |
+          docker push ${{ steps.ecr_login.outputs.registry }}/${{ env.AWS_ECR_REPO_NAME }}:$GITHUB_RUN_ID
+
+  ecs-deploy:
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect AWS Account
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: ECS Service Deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.AWS_ECS_CLUSTER }} \
+            --service ${{ env.AWS_ECS_SERVICE }} \
+            --force-new-deployment
