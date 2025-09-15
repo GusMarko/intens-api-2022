@@ -13,6 +13,6 @@ ENV PORT=${PORT}
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE ${PORT}
 RUN groupadd -r intensgroup && useradd -r -g intensgroup intensuser
-RUN chown -R intensgroup:intensuser /app
-USER javauser
+RUN chown -R intensuser:intensgroup /app
+USER intensuser
 ENTRYPOINT ["java", "-jar", "app.jar"]
